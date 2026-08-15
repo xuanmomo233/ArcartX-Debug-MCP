@@ -17,6 +17,7 @@
   - [工作流 B：在线 UI 调试（打开 → 截图 → 分析 → 修改 → 重载）](#工作流-b在线-ui-调试打开--截图--分析--修改--重载)
   - [工作流 C：ARIA 脚本调试](#工作流-caria-脚本调试)
   - [工作流 D：自动化 UI 测试](#工作流-d自动化-ui-测试)
+  - [工作流 E：模块代码变更部署（提交 → CI 构建 → 云端同步）](#工作流-e模块代码变更部署提交--ci-构建--云端同步)
 - [API 参考手册](#api-参考手册)
   - [MCP Server 工具列表（17 个）](#mcp-server-工具列表17-个)
   - [调试桥 RPC 方法列表（16 个）](#调试桥-rpc-方法列表16-个)
@@ -762,6 +763,79 @@ Content-Type: application/json
 6. ax_reload_module → 重载模块
 7. 验证功能恢复
 ```
+
+---
+
+### 工作流 E：模块代码变更部署（提交 → CI 构建 → 云端同步）
+
+**适用场景**：当修改了模块的 Java 代码（非 UI yml 热重载能解决的变更，如新增命令、Service 逻辑变更、Model 字段调整等），需要重新编译加密模块并通过云端分发到运行中的服务端。
+
+> **与工作流 B 的区别**：工作流 B 适用于纯 UI yml 文件修改，可通过 `ax_reload_ui` 热重载即时生效；工作流 E 适用于 Java 代码变更，必须重新编译 `.axb` 加密模块包后通过 `axs sync` 更新。
+
+**前提条件**：
+- ArcartXSuite 仓库已托管在 GitHub（`https://github.com/xuanmomo233/ArcartXSuite`）
+- GitHub Actions 工作流 `build-encrypted.yml` 已配置（push 到 main 自动触发）
+- GitHub Secrets 已配置：`AXS_SEED_PARTS_B64`、`AXB_SIGN_SEED_B64`、`AXB_RESP_SIGN_SEED_B64`、`CLOUD_CI_TOKEN`
+- 服务端已安装 ArcartXSuite 主插件且可访问云端（`cloud.021209.xyz`）
+
+**步骤**：
+
+1. **本地验证编译**
+   ```bash
+   cd ArcartXSuite
+   gradlew.bat :modules:battlepass:compileJava --no-daemon
+   ```
+   确保编译通过，无语法错误。
+
+2. **提交变更到 GitHub**
+   ```bash
+   git add modules/battlepass/src/main/java/... modules/battlepass/src/main/resources/messages.yml
+   git commit -m "feat(battlepass): 新增 addexp/setexp/removeexp/setlevel 管理指令"
+   git push origin main
+   ```
+
+3. **等待 GitHub CI 构建完成**
+   - push 到 main 后自动触发 `build-encrypted.yml` 工作流
+   - `detect-changes` 作业检测到 `modules/battlepass/` 路径变更 → `module_changed=true`
+   - `build-modules-encrypted` 作业执行：
+     - `gradle :modules:battlepass:encryptModuleAxb -Paxs.protectModules -PskipNativeCheck=true`
+     - 逐类 AES-GCM/ChaCha20 加密生成 `.axb` 模块包
+     - 上传到云端（主云 `cloud.021209.xyz` + FlareCloud 镜像），version 格式 `<BASEVER>-ci.<短sha>`，`setCurrent=true`
+   - 可在 GitHub Actions 页面查看构建进度：`https://github.com/xuanmomo233/ArcartXSuite/actions`
+   - 构建通常需要 5-15 分钟，取决于队列和模块数量
+
+4. **在服务端同步更新模块**
+   ```
+   通过调试桥执行服务端命令：
+   工具: ax_run_server_command
+   参数: { "command": "axs sync battlepass" }
+   
+   或通过 Herald 模拟玩家执行：
+   Herald Action: chat_command
+   参数: { "command": "axs sync battlepass" }
+   ```
+   `axs sync battlepass` 会从云端拉取最新版本的 `battlepass.axb`，替换服务端模块目录中的旧版本，并自动重载模块。
+
+5. **验证模块更新成功**
+   ```
+   工具: ax_list_modules
+   参数: {}
+   返回: 确认 battlepass 模块 ready=true 且版本号已更新
+   ```
+
+6. **测试新功能**
+   ```
+   工具: ax_run_server_command
+   参数: { "command": "axs battlepass help" }
+   返回: 确认新增的 addexp/setexp/removeexp/setlevel 子命令出现在帮助列表中
+   ```
+
+**注意事项**：
+- **只改 UI yml 不需要走此流程**：UI 文件修改可直接编辑服务端 `plugins/ArcartX-Suite/ui/` 下的文件 + `ax_reload_ui` 热重载，无需提交 GitHub。
+- **本体(core)变更与模块变更独立**：如果只改了 `modules/battlepass/` 下的文件，CI 只会构建并上传 battlepass 模块的 `.axb`，不会重建本体。
+- **密钥一致性**：模块加密使用与本体相同的 canonical root_seed（通过 `AXS_SEED_PARTS_B64` Secret），已部署的本体才能解密新模块。如果 Secret 未配置或变更过，新模块将无法被解密加载。
+- **CI 构建失败时检查**：密钥扫描（硬编码 QQ/密码/JWT）、编译错误、ProGuard 混淆规则冲突都可能导致失败，在 Actions 日志中定位具体原因。
+- **多模块同时变更**：如果一次提交改了多个模块，CI 会为每个变更的模块分别构建并上传独立的 `.axb`，需要分别 `axs sync <模块名>`。
 
 ---
 
