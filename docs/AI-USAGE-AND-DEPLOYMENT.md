@@ -804,17 +804,21 @@ Content-Type: application/json
    - 可在 GitHub Actions 页面查看构建进度：`https://github.com/xuanmomo233/ArcartXSuite/actions`
    - 构建通常需要 5-15 分钟，取决于队列和模块数量
 
-4. **在服务端同步更新模块**
+4. **在服务端更新模块**
    ```
    通过调试桥执行服务端命令：
    工具: ax_run_server_command
-   参数: { "command": "axs sync battlepass" }
+   参数: { "command": "axs update battlepass" }
    
    或通过 Herald 模拟玩家执行：
    Herald Action: chat_command
-   参数: { "command": "axs sync battlepass" }
+   参数: { "command": "axs update battlepass" }
    ```
-   `axs sync battlepass` 会从云端拉取最新版本的 `battlepass.axb`，替换服务端模块目录中的旧版本，并自动重载模块。
+   `axs update <module>` 会从云端下载最新版本的 `.axb`，卸载旧版本（释放 ClassLoader），加载新版本并自动初始化。
+   
+   > **注意区分 `axs sync` 与 `axs update`**：
+   > - `axs sync`（无参数）：仅同步云端授权模块列表，不下载模块二进制文件
+   > - `axs update <module|all>`：从云端下载并热加载模块的最新版本
 
 5. **验证模块更新成功**
    ```
