@@ -1,0 +1,14 @@
+# ArcartX-Debug-MCP 配置文件示例
+# 复制为 config.toml 后按需修改
+
+[server]
+mode = "stdio"  # "stdio" 或 "sse"
+listen = "127.0.0.1:18900"  # SSE 模式监听地址
+
+[workspace]
+path = "D:\\IDEA\\project\\ArcartXSuite"  # 默认 workspace 路径
+
+[bridge]
+url = "ws://127.0.0.1:18899"
+token = "axs-debug-local"
+auto_connect = false

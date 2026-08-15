@@ -1,0 +1,16 @@
+/target/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# 本地配置（含 token 等敏感信息）
+config.toml
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 调试产物
+*.log
