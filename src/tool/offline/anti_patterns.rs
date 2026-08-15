@@ -271,8 +271,10 @@ fn extract_yaml_value(line: &str, prop: &str) -> Option<String> {
     let prefix = format!("{}:", prop);
     if line.starts_with(prefix.as_str()) {
         let val = line[prefix.len()..].trim();
-        // 去掉 YAML 引号
-        let val = val.trim_matches(|c| c == '"' || c == '\'');
+        // 只去掉成对的最外层引号（YAML 字符串包裹），不能贪婪去掉所有引号——
+        // 否则 "'&7赛季: &f' + var.seasonName" 会被剥成 "&7赛季: &f' + var.seasonName"，
+        // 左端 & 触发颜色码误判。
+        let val = strip_outer_quotes(val);
         if val.is_empty() || val == "[]" || val == "{}" {
             return None;
         }
@@ -280,6 +282,20 @@ fn extract_yaml_value(line: &str, prop: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// 只去掉成对的最外层引号：当 val 以 " 开头且以 " 结尾，或以 ' 开头且以 ' 结尾时去掉首尾各一个。
+/// 不会贪婪剥掉内部的所有引号字符。
+fn strip_outer_quotes(val: &str) -> &str {
+    let bytes = val.as_bytes();
+    if bytes.len() >= 2 {
+        if (bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\'')
+        {
+            return &val[1..val.len() - 1];
+        }
+    }
+    val
 }
 
 /// 判断值是否疑似应为纯文本（资源路径、颜色代码文本等）

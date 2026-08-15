@@ -213,7 +213,14 @@ async fn call_bridge(args: Value, ctx: ToolContext, method: &str, id_field: &str
         Some(s) => s.to_string(),
         None => return ToolResult::error(format!("缺少参数 {}", id_field)),
     };
-    let params = json!({ "uiId": id });
+    // 根据 id_field 决定发给调试桥的 JSON key 名：
+    //   ui_id    -> uiId    (ui.read / ui.reload)
+    //   module_id -> moduleId (module.reload)
+    let param_key = match id_field {
+        "module_id" => "moduleId",
+        _ => "uiId",
+    };
+    let params = json!({ param_key: id });
     call_bridge_method(&ctx, method, params).await
 }
 
