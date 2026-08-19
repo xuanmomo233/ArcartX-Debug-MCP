@@ -171,6 +171,134 @@ pub fn register_all(registry: &mut crate::tool::ToolRegistry) {
             box_future(async move { run_server_command(args, ctx).await })
         }),
     });
+
+    // 18. ax_list_ui_files_online
+    registry.register(Tool {
+        name: "ax_list_ui_files_online",
+        description: "从服务端列出 ui/ 目录下所有 UI yml 文件名",
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: std::sync::Arc::new(|args, ctx| {
+            box_future(async move { call_bridge_no_params(args, ctx, "ui.list").await })
+        }),
+    });
+
+    // 19. ax_is_ui_open
+    registry.register(Tool {
+        name: "ax_is_ui_open",
+        description: "查询指定玩家的某个 UI 是否处于打开状态",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "player": { "type": "string", "description": "玩家名" },
+                "ui_id": { "type": "string", "description": "UI ID" }
+            },
+            "required": ["player", "ui_id"]
+        }),
+        handler: std::sync::Arc::new(|args, ctx| {
+            box_future(async move { open_close_ui(args, ctx, "ui.is_open").await })
+        }),
+    });
+
+    // 20. ax_check_aria_available
+    registry.register(Tool {
+        name: "ax_check_aria_available",
+        description: "检查服务端 ARIA 脚本运行时是否可用，返回可用状态和版本号",
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: std::sync::Arc::new(|args, ctx| {
+            box_future(async move { call_bridge_no_params(args, ctx, "aria.available").await })
+        }),
+    });
+
+    // 21. ax_diagnose_config
+    registry.register(Tool {
+        name: "ax_diagnose_config",
+        description: "对指定模块运行配置诊断，返回模块声明的 ModuleConfigSpec 列表（同步策略、版本、校验规则等）",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "module_id": { "type": "string", "description": "模块 ID" }
+            },
+            "required": ["module_id"]
+        }),
+        handler: std::sync::Arc::new(|args, ctx| {
+            box_future(async move { call_bridge(args, ctx, "config.diagnose", "module_id").await })
+        }),
+    });
+
+    // 22. ax_list_players
+    registry.register(Tool {
+        name: "ax_list_players",
+        description: "列出服务端在线玩家（名称、UUID、所在世界）",
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: std::sync::Arc::new(|args, ctx| {
+            box_future(async move { call_bridge_no_params(args, ctx, "player.list").await })
+        }),
+    });
+
+    // 23. ax_tail_log
+    registry.register(Tool {
+        name: "ax_tail_log",
+        description: "获取服务端最近 N 行日志（读取 logs/latest.log）",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "lines": { "type": "integer", "description": "获取的行数（默认 100）" }
+            }
+        }),
+        handler: std::sync::Arc::new(|args, ctx| {
+            box_future(async move { tail_log(args, ctx).await })
+        }),
+    });
+
+    // 24. ax_get_captured_packets
+    registry.register(Tool {
+        name: "ax_get_captured_packets",
+        description: "查询服务端捕获的客户端自定义包（按时间倒序，可限制数量）",
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "limit": { "type": "integer", "description": "最多返回的包数量（默认 100）" }
+            }
+        }),
+        handler: std::sync::Arc::new(|args, ctx| {
+            box_future(async move { get_captured_packets(args, ctx).await })
+        }),
+    });
+
+    // 25. ax_clear_captured_packets
+    registry.register(Tool {
+        name: "ax_clear_captured_packets",
+        description: "清空服务端包流捕获缓冲区",
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: std::sync::Arc::new(|args, ctx| {
+            box_future(async move { call_bridge_no_params(args, ctx, "packet.clear").await })
+        }),
+    });
+
+    // 26. ax_packet_capture_status
+    registry.register(Tool {
+        name: "ax_packet_capture_status",
+        description: "查询服务端包流捕获状态（当前缓冲区中的记录数）",
+        input_schema: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        handler: std::sync::Arc::new(|args, ctx| {
+            box_future(async move { call_bridge_no_params(args, ctx, "packet.status").await })
+        }),
+    });
 }
 
 /// 工具 8：ax_connect_bridge
@@ -286,6 +414,31 @@ async fn run_server_command(args: Value, ctx: ToolContext) -> ToolResult {
     };
     let params = json!({ "command": command });
     call_bridge_method(&ctx, "server.command", params).await
+}
+
+/// 工具 23：ax_tail_log
+async fn tail_log(args: Value, ctx: ToolContext) -> ToolResult {
+    let lines = args.get("lines").and_then(|v| v.as_i64());
+    let params = match lines {
+        Some(n) => json!({ "lines": n }),
+        None => json!({}),
+    };
+    call_bridge_method(&ctx, "log.tail", params).await
+}
+
+/// 工具 24：ax_get_captured_packets
+async fn get_captured_packets(args: Value, ctx: ToolContext) -> ToolResult {
+    let limit = args.get("limit").and_then(|v| v.as_i64());
+    let params = match limit {
+        Some(n) => json!({ "limit": n }),
+        None => json!({}),
+    };
+    call_bridge_method(&ctx, "packet.get_captured", params).await
+}
+
+/// 无参数的桥接方法调用（ui.list、aria.available、player.list、packet.clear、packet.status）
+async fn call_bridge_no_params(_args: Value, ctx: ToolContext, method: &str) -> ToolResult {
+    call_bridge_method(&ctx, method, json!({})).await
 }
 
 /// 统一的桥接 method 调用封装
