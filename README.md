@@ -30,7 +30,7 @@ mode = "stdio"              # 传输模式：stdio 或 sse
 listen = "127.0.0.1:18900"  # SSE 模式监听地址
 
 [workspace]
-path = "D:\\IDEA\\project\\ArcartXSuite"  # workspace 根路径
+path = "D:\\path\\to\\your\\server"  # 指向服务端根目录（含 plugins/ArcartX-Suite/ui/）
 
 [bridge]
 url = "ws://127.0.0.1:18899"  # 调试桥 WebSocket 地址

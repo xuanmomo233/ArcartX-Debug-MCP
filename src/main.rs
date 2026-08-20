@@ -32,7 +32,10 @@ async fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let cli = Cli::parse();
-    let config = config::AppConfig::load(&cli.config)?;
+    // 配置文件路径解析：相对路径时拼到可执行文件同目录（而非进程 cwd），
+    // 避免 MCP 客户端（如 Devin CLI）启动子进程时 cwd 不在 exe 目录导致 config.toml 找不到。
+    let config_path = resolve_config_path(&cli.config);
+    let config = config::AppConfig::load(&config_path)?;
 
     // 决定传输模式
     let mode = cli
@@ -165,6 +168,31 @@ async fn dispatch(
         "id": id,
         "result": result,
     })
+}
+
+/// 解析配置文件路径：相对路径时拼到可执行文件所在目录。
+///
+/// MCP 客户端（Devin CLI / Windsurf 等）启动 stdio 子进程时，工作目录（cwd）
+/// 不一定是可执行文件所在目录（Devin CLI 甚至不支持配置 cwd 字段）。
+/// `config.toml` 默认是相对路径，若直接按 cwd 解析会找不到文件，
+/// 进而触发 `AppConfig::load` 的"文件不存在"分支静默回退到硬编码默认配置
+/// （默认 workspace 是源码目录，与服务端实际路径不符）。
+///
+/// 此函数保证：只要 `--config` 传的是相对路径，就到 exe 同目录去找；
+/// 传绝对路径则原样使用。
+fn resolve_config_path(cli_config: &str) -> String {
+    let p = std::path::Path::new(cli_config);
+    if p.is_absolute() {
+        return cli_config.to_string();
+    }
+    // 相对路径：拼到 exe 同目录
+    match std::env::current_exe().and_then(|exe| exe.parent().map(|d| d.join(p)).ok_or_else(|| anyhow::anyhow!("无法获取 exe 父目录"))) {
+        Ok(abs) => abs.display().to_string(),
+        Err(e) => {
+            log::warn!("无法定位 exe 目录，回退用 cwd 解析 config: {}（原始路径: {}）", e, cli_config);
+            cli_config.to_string()
+        }
+    }
 }
 
 /// 构造 JSON-RPC 错误响应

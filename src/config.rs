@@ -92,11 +92,18 @@ fn default_bridge_token() -> String {
 }
 
 impl AppConfig {
-    /// 从 TOML 文件加载配置，文件不存在则返回默认配置
+    /// 从 TOML 文件加载配置。
+    ///
+    /// 文件不存在或解析失败时直接返回错误，**不再静默回退到默认配置**。
+    /// 之前的静默回退行为会掩盖配置路径错误（如 MCP 客户端未设置 cwd 导致
+    /// `config.toml` 相对路径找不到），让问题表现为"workspace 指向错误的
+    /// 源码目录"而难以定位。改为硬失败后，启动时会立即报错并提示路径。
     pub fn load(path: &str) -> Result<Self> {
         if !std::path::Path::new(path).exists() {
-            log::warn!("配置文件 {} 不存在，使用默认配置", path);
-            return Ok(Self::default());
+            anyhow::bail!(
+                "配置文件不存在: {}。请检查 --config 参数或可执行文件同目录下是否有 config.toml",
+                path
+            );
         }
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("读取配置文件失败: {}", path))?;
