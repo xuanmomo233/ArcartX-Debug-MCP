@@ -186,7 +186,14 @@ fn resolve_config_path(cli_config: &str) -> String {
         return cli_config.to_string();
     }
     // 相对路径：拼到 exe 同目录
-    match std::env::current_exe().and_then(|exe| exe.parent().map(|d| d.join(p)).ok_or_else(|| anyhow::anyhow!("无法获取 exe 父目录"))) {
+    let resolved = std::env::current_exe()
+        .map_err(anyhow::Error::from)
+        .and_then(|exe| {
+            exe.parent()
+                .map(|d| d.join(p))
+                .ok_or_else(|| anyhow::anyhow!("无法获取 exe 父目录"))
+        });
+    match resolved {
         Ok(abs) => abs.display().to_string(),
         Err(e) => {
             log::warn!("无法定位 exe 目录，回退用 cwd 解析 config: {}（原始路径: {}）", e, cli_config);
