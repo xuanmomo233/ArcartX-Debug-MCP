@@ -15,12 +15,12 @@
 - [AI 使用文档](#ai-使用文档)
   - [工作流 A：离线 UI 静态分析](#工作流-a离线-ui-静态分析)
   - [工作流 B：在线 UI 调试（打开 → 截图 → 分析 → 修改 → 重载）](#工作流-b在线-ui-调试打开--截图--分析--修改--重载)
-  - [工作流 C：ARIA 脚本调试](#工作流-caria-脚本调试)
+  - [工作流 C：ARIA 脚本静态分析](#工作流-caria-脚本静态分析)
   - [工作流 D：自动化 UI 测试](#工作流-d自动化-ui-测试)
   - [工作流 E：模块代码变更部署（提交 → CI 构建 → 云端同步）](#工作流-e模块代码变更部署提交--ci-构建--云端同步)
 - [API 参考手册](#api-参考手册)
-  - [MCP Server 工具列表（17 个）](#mcp-server-工具列表17-个)
-  - [调试桥 RPC 方法列表（16 个）](#调试桥-rpc-方法列表16-个)
+  - [MCP Server 工具列表（20 个）](#mcp-server-工具列表20-个)
+  - [调试桥 RPC 方法列表（12 个）](#调试桥-rpc-方法列表12-个)
   - [Herald 客户端 Action 列表（317 个）](#herald-客户端-action-列表317-个)
 - [典型调试场景示例](#典型调试场景示例)
 
@@ -37,17 +37,20 @@
 ┌──────────────────────────▼──────────────────────────────────┐
 │              ArcartX-Debug-MCP Server (Rust)                │
 │                                                             │
-│  离线工具（7个）              在线工具（10个）                 │
+│  离线工具（7个）              在线工具（13个）                 │
 │  ├─ ax_parse_ui_yaml         ├─ ax_connect_bridge            │
 │  ├─ ax_analyze_aria_script   ├─ ax_get_ui_config             │
-│  ├─ ax_validate_ui_structure ├─ ax_reload_ui                 │
-│  ├─ ax_find_control_refs     ├─ ax_open_ui                   │
-│  ├─ ax_check_anti_patterns   ├─ ax_close_ui                  │
-│  ├─ ax_list_ui_files         ├─ ax_send_ui_packet            │
-│  └─ ax_search_in_files       ├─ ax_eval_aria                 │
-│                              ├─ ax_reload_module             │
-│                              ├─ ax_list_modules              │
-│                              └─ ax_run_server_command        │
+│  ├─ ax_validate_ui_structure ├─ ax_list_ui_files_online      │
+│  ├─ ax_find_control_refs     ├─ ax_is_ui_open                │
+│  ├─ ax_check_anti_patterns   ├─ ax_reload_module             │
+│  ├─ ax_list_ui_files         ├─ ax_list_modules              │
+│  └─ ax_search_in_files       ├─ ax_diagnose_config           │
+│                              ├─ ax_list_players              │
+│                              ├─ ax_run_server_command        │
+│                              ├─ ax_tail_log                  │
+│                              ├─ ax_get_captured_packets      │
+│                              ├─ ax_clear_captured_packets    │
+│                              └─ ax_packet_capture_status     │
 └──────────┬──────────────────────────────┬───────────────────┘
            │ WebSocket JSON-RPC            │ HTTP REST
 ┌──────────▼──────────────┐  ┌────────────▼──────────────────┐
@@ -57,15 +60,15 @@
 │  WebSocket :18899        │  │  HTTP :8888-8898              │
 │  Token: axs-debug-local  │  │  317 个 Action                │
 │                         │  │  ├─ 311 原始 Herald Action    │
-│  16 个 RPC 方法          │  │  └─ 6 ArcartX 专属 Action     │
-│  ├─ UI 操控 (7)          │  │     ├─ ax_listen_ui_events    │
-│  ├─ ARIA 脚本 (2)        │  │     ├─ ax_get_ui_events       │
-│  ├─ 模块管理 (2)         │  │     ├─ ax_capture_packets     │
-│  ├─ 配置诊断 (1)         │  │     ├─ ax_get_captured_packets│
-│  ├─ 玩家 (1)             │  │     ├─ ax_send_packet         │
-│  ├─ 命令 (1)             │  │     └─ ax_get_global_storage  │
-│  ├─ 日志 (1)             │  │                               │
-│  └─ 包流 (3)             │  │  端口/Token 写入:             │
+│  12 个 RPC 方法          │  │  └─ 6 ArcartX 专属 Action     │
+│  ├─ UI 只读 (3)          │  │     ├─ ax_listen_ui_events    │
+│  ├─ 模块管理 (2)         │  │     ├─ ax_get_ui_events       │
+│  ├─ 配置诊断 (1)         │  │     ├─ ax_capture_packets     │
+│  ├─ 玩家 (1)             │  │     ├─ ax_get_captured_packets│
+│  ├─ 命令 (1)             │  │     ├─ ax_send_packet         │
+│  ├─ 日志 (1)             │  │     └─ ax_get_global_storage  │
+│  └─ 包流 (3)             │  │                               │
+│                         │  │  端口/Token 写入:             │
 │                         │  │  <gameDir>/.herald/           │
 └─────────────────────────┘  └───────────────────────────────┘
            │                              │
@@ -385,19 +388,13 @@ auto_connect = false               # 是否启动时自动连接
    返回: yml 文件完整内容
    ```
 
-4. **让玩家打开 UI**（两种方式）
-
-   **方式 A：通过调试桥直接打开**（不经过模块逻辑，UI 无初始化数据）
-   ```
-   工具: ax_open_ui
-   参数: { "player": "LiuYun_King", "ui_id": "lottery_case" }
-   ```
-
-   **方式 B：通过 Herald 模拟玩家执行命令**（推荐，经过完整模块逻辑）
+4. **让玩家打开 UI**（通过 Herald 模拟玩家执行命令，经过完整模块逻辑）
    ```
    Herald Action: chat_command
    参数: { "command": "lottery open default_weapon_case" }
    ```
+
+   > **调试桥已移除 UI 写接口**：`ui.open`/`ui.close`/`ui.reload`/`ui.send_packet` 不存在。绕过模块命令直接 open/register UI 会缺少初始化数据，且不带 `AXS:` 前缀的 ID 会注册出假 UI 干扰真实功能，因此一律走真实玩家路径打开。
 
 5. **截图查看渲染效果**
    ```
@@ -408,67 +405,53 @@ auto_connect = false               # 是否启动时自动连接
 
 6. **发现问题后修改 yml 文件**（AI 直接编辑文件）
 
-7. **热重载 UI**
+7. **重载所属模块使 UI 修改生效**
    ```
-   工具: ax_reload_ui
-   参数: { "ui_id": "lottery_case" }
-   返回: 重载结果
+   工具: ax_run_server_command
+   参数: { "command": "axs reload <所属模块ID>" }
    ```
+   `axs reload <module>` 是唯一可靠的重载路径：模块重载时会以正确的 `AXS:` 前缀重新导出并注册其 UI。模块 ID 可通过 `ax_list_modules` 查看；`axs reload all` 重载本体配置+全部模块。
 
 8. **重新打开 UI 验证修复**
    ```
    重复步骤 4-5
    ```
 
-9. **关闭 UI**
+9. **关闭 UI**（模拟玩家按 ESC）
    ```
-   工具: ax_close_ui
-   参数: { "player": "LiuYun_King", "ui_id": "AXS:lottery_case" }
+   Herald Action: keyboard_input
+   参数: { "key": "escape", "action": "press" }
    ```
 
-> **UI ID 命名空间**：模块注册的 UI ID 格式为 `模块名:ui_id`（如 `AXS:lottery_case`），直接在 ui/ 目录下的 UI ID 为文件名（如 `lottery_case`）。关闭时需要用注册时的完整 ID。
+> **UI ID 命名空间**：模块注册的 UI ID 格式为 `模块名:ui_id`（如 `AXS:lottery_case`），直接在 ui/ 目录下的 UI ID 为文件名（如 `lottery_case`）。`ax_is_ui_open` 查询时需用注册时的完整 ID。
 
 ---
 
-### 工作流 C：ARIA 脚本调试
+### 工作流 C：ARIA 脚本静态分析
 
-**适用场景**：需要验证 ARIA 脚本逻辑、调试变量值、测试函数调用。
+**适用场景**：验证 ARIA 脚本逻辑、排查变量引用问题。
+
+> **调试桥已移除 `aria.eval`/`aria.available`，MCP 工具 `ax_eval_aria`/`ax_check_aria_available` 同步删除**。不要在服务端 eval ARIA 脚本来"测试逻辑"——脱离真实 UI 上下文（packet、var、self 控件树）的 eval 结果不可靠且极具误导性。ARIA 脚本只能通过静态分析 + 真实 UI 流程验证。
 
 **步骤**：
 
-1. **检查 ARIA 可用性**
-   ```
-   工具: ax_eval_aria (会自动检查)
-   或直接调用调试桥: aria.available
-   返回: { "available": true, "version": "new" }
-   ```
-
-2. **执行简单表达式**
-   ```
-   工具: ax_eval_aria
-   参数: { "code": "1 + 2 * 3" }
-   返回: { "result": 7 }
-   ```
-
-3. **执行带绑定的脚本**
-   ```
-   工具: ax_eval_aria
-   参数: {
-     "code": "player('LiuYun_King').getHealth()",
-     "bindings": {}
-   }
-   ```
-
-4. **静态分析脚本问题**
+1. **静态分析脚本**
    ```
    工具: ax_analyze_aria_script
-   参数: { "script": "var.x = packet['title']; self['label'].texts = var.x" }
+   参数: { "script": "var.x = packet['title']; self['label'].texts = var.x", "context": "ui.packetHandler.init" }
    返回: 变量引用分析、未定义变量检测
    ```
 
-5. **结合离线分析 + 在线验证**
-   - 先用 `ax_analyze_aria_script` 静态分析发现问题
-   - 再用 `ax_eval_aria` 在服务端实际执行验证
+2. **结合 UI 配置做上下文检查**
+   ```
+   工具: ax_get_ui_config 或离线 ax_parse_ui_yaml / ax_check_anti_patterns
+   确认 packetHandler 的 packet 字段、控件名、触发器名真实存在
+   ```
+
+3. **真实路径验证**
+   - 修改 yml → `ax_run_server_command` 执行 `axs reload <所属模块ID>`
+   - Herald `chat_command` 打开 UI → `screenshot` / `ax_get_ui_events` 观察实际表现
+   - `ax_tail_log` 查看服务端日志中是否有 ARIA 运行时报错
 
 ---
 
@@ -535,10 +518,10 @@ auto_connect = false               # 是否启动时自动连接
    返回: { "open": true/false, "screenClass": "...", "title": "..." }
    ```
 
-10. **通过调试桥关闭 UI**
+10. **模拟玩家按 ESC 关闭 UI**
     ```
-    工具: ax_close_ui
-    参数: { "player": "LiuYun_King", "ui_id": "AXS:lottery_case" }
+    Herald Action: keyboard_input
+    参数: { "key": "escape", "action": "press" }
     ```
 
 11. **验证 screen_close 事件**
@@ -551,7 +534,7 @@ auto_connect = false               # 是否启动时自动连接
 
 ## API 参考手册
 
-### MCP Server 工具列表（17 个）
+### MCP Server 工具列表（20 个）
 
 #### 离线工具（7 个，不需要服务端运行）
 
@@ -565,24 +548,27 @@ auto_connect = false               # 是否启动时自动连接
 | 6 | `ax_search_in_files` | `pattern`, `workspace?`, `glob?` | 搜索 UI 文件内容 |
 | 7 | `ax_analyze_aria_script` | `script`, `context?` | 静态分析 ARIA 脚本 |
 
-#### 在线工具（10 个，需要连接调试桥）
+#### 在线工具（13 个，需要连接调试桥）
 
 | # | 工具名 | 参数 | 说明 |
 |---|---|---|---|
 | 8 | `ax_connect_bridge` | `url?`, `token?` | 连接服务端调试桥 |
 | 9 | `ax_get_ui_config` | `ui_id` | 获取服务端 UI yml 内容 |
-| 10 | `ax_reload_ui` | `ui_id` | 热重载 UI |
-| 11 | `ax_open_ui` | `player`, `ui_id` | 为玩家打开 UI |
-| 12 | `ax_close_ui` | `player`, `ui_id` | 为玩家关闭 UI |
-| 13 | `ax_send_ui_packet` | `player`, `ui_id`, `handler`, `payload?` | 向 UI 发包 |
-| 14 | `ax_eval_aria` | `code`, `bindings?` | 执行 ARIA 脚本 |
-| 15 | `ax_reload_module` | `module_id` | 重载模块 |
-| 16 | `ax_list_modules` | (无) | 列出已加载模块 |
-| 17 | `ax_run_server_command` | `command` | 执行服务端命令 |
+| 10 | `ax_list_ui_files_online` | (无) | 列出服务端 ui/ 目录文件 |
+| 11 | `ax_is_ui_open` | `player`, `ui_id` | 查询玩家某 UI 是否打开 |
+| 12 | `ax_reload_module` | `module_id` | 重载模块 |
+| 13 | `ax_list_modules` | (无) | 列出已加载模块 |
+| 14 | `ax_diagnose_config` | `module_id` | 模块配置规约诊断 |
+| 15 | `ax_list_players` | (无) | 列出在线玩家 |
+| 16 | `ax_run_server_command` | `command` | 执行服务端命令 |
+| 17 | `ax_tail_log` | `lines?` | 读取服务端最近日志 |
+| 18 | `ax_get_captured_packets` | `limit?` | 查询捕获的客户端包 |
+| 19 | `ax_clear_captured_packets` | (无) | 清空包流捕获缓冲 |
+| 20 | `ax_packet_capture_status` | (无) | 查询捕获缓冲状态 |
 
 ---
 
-### 调试桥 RPC 方法列表（16 个）
+### 调试桥 RPC 方法列表（12 个）
 
 **连接方式**：WebSocket `ws://<host>:18899/?token=axs-debug-local`
 
@@ -591,24 +577,13 @@ auto_connect = false               # 是否启动时自动连接
 { "jsonrpc": "2.0", "id": "1", "method": "方法名", "params": { ... } }
 ```
 
-#### UI 操控（7 个）
+#### UI 只读查询（3 个）
 
 | 方法 | 参数 | 返回 | 说明 |
 |---|---|---|---|
 | `ui.list` | (无) | `uiFiles: [string]` | 列出 ui/ 目录所有 yml 文件 |
 | `ui.read` | `uiId` | `uiId, content` | 读取 UI yml 文件内容 |
-| `ui.reload` | `uiId` | `success, runtimeUiId, registeredUiId, action, message` | 热重载 UI |
-| `ui.open` | `player, uiId` | `success, message` | 打开 UI |
-| `ui.close` | `player, uiId` | `success, message` | 关闭 UI |
 | `ui.is_open` | `player, uiId` | `open: boolean` | 查询 UI 是否打开 |
-| `ui.send_packet` | `player, uiId, handler, payload?` | `success, message` | 向 UI 发包 |
-
-#### ARIA 脚本（2 个）
-
-| 方法 | 参数 | 返回 | 说明 |
-|---|---|---|---|
-| `aria.available` | (无) | `available: boolean, version: string` | 检查 ARIA 可用性 |
-| `aria.eval` | `code, bindings?` | `result: any` | 执行 ARIA 脚本 |
 
 #### 模块管理（2 个）
 
@@ -648,6 +623,8 @@ auto_connect = false               # 是否启动时自动连接
 | `packet.status` | (无) | `size: int` | 查询捕获缓冲区大小 |
 | `packet.get_captured` | `maxCount?` | `packets: [...], count` | 获取并清空捕获的包 |
 | `packet.clear` | (无) | `success: boolean` | 清空捕获缓冲区 |
+
+> `packet.capture` 是 `packet.get_captured` 的别名。
 
 ---
 
@@ -710,7 +687,7 @@ Content-Type: application/json
 3. ax_validate_ui_structure → 发现缺少必需属性
 4. ax_check_anti_patterns → 发现 ARIA 引用不存在的控件
 5. 修复 yml 文件
-6. ax_reload_ui → 热重载
+6. ax_run_server_command: axs reload <所属模块> → 重载生效
 7. Herald: chat_command → 重新打开 UI
 8. Herald: screenshot → 验证修复
 ```
@@ -725,7 +702,7 @@ Content-Type: application/json
 5. ax_get_ui_config → 读取 UI 配置，检查按钮的 click 触发器
 6. ax_analyze_aria_script → 分析 click 触发器中的 ARIA 脚本
 7. 修复脚本
-8. ax_reload_ui → 热重载
+8. ax_run_server_command: axs reload <所属模块> → 重载生效
 9. 重新测试
 ```
 
@@ -737,7 +714,7 @@ Content-Type: application/json
 3. Herald: chat_command → 打开 UI（触发服务端 sendPacket）
 4. Herald: ax_get_captured_packets → 检查是否收到包
    (注意：packetBridge.sendPacket 走 ArcartX UI 通讯通道，不走 CustomPacketEvent)
-5. 调试桥: ui.send_packet → 直接向 UI 发包测试 packetHandler
+5. Herald: mouse_click → 模拟真实点击交互，触发 packetHandler（唯一可靠的测试方式）
 6. Herald: screenshot → 检查 UI 是否响应
 ```
 
@@ -745,11 +722,11 @@ Content-Type: application/json
 
 ```
 1. ax_analyze_aria_script → 静态分析发现未定义变量
-2. ax_eval_aria → 在服务端执行脚本片段验证
-3. ax_get_ui_config → 读取完整 UI 配置上下文
-4. 修复 ARIA 脚本
-5. ax_reload_ui → 热重载
-6. Herald: chat_command → 重新打开 UI 验证
+2. ax_get_ui_config → 读取完整 UI 配置上下文，确认控件/packet 字段存在
+3. 修复 ARIA 脚本
+4. ax_run_server_command: axs reload <所属模块> → 重载生效
+5. Herald: chat_command → 重新打开 UI 验证
+6. ax_tail_log → 确认无 ARIA 运行时报错
 ```
 
 ### 场景 5：模块配置问题导致功能异常
@@ -770,7 +747,7 @@ Content-Type: application/json
 
 **适用场景**：当修改了模块的 Java 代码（非 UI yml 热重载能解决的变更，如新增命令、Service 逻辑变更、Model 字段调整等），需要重新编译加密模块并通过云端分发到运行中的服务端。
 
-> **与工作流 B 的区别**：工作流 B 适用于纯 UI yml 文件修改，可通过 `ax_reload_ui` 热重载即时生效；工作流 E 适用于 Java 代码变更，必须重新编译 `.axb` 加密模块包后通过 `axs sync` 更新。
+> **与工作流 B 的区别**：工作流 B 适用于纯 UI yml 文件修改，可通过 `axs reload <所属模块>` 即时生效；工作流 E 适用于 Java 代码变更，必须重新编译 `.axb` 加密模块包后通过 `axs sync` 更新。
 
 **前提条件**：
 - ArcartXSuite 仓库已托管在 GitHub（`https://github.com/xuanmomo233/ArcartXSuite`）
@@ -835,7 +812,7 @@ Content-Type: application/json
    ```
 
 **注意事项**：
-- **只改 UI yml 不需要走此流程**：UI 文件修改可直接编辑服务端 `plugins/ArcartX-Suite/ui/` 下的文件 + `ax_reload_ui` 热重载，无需提交 GitHub。
+- **只改 UI yml 不需要走此流程**：UI 文件修改可直接编辑服务端 `plugins/ArcartX-Suite/ui/` 下的文件 + `axs reload <所属模块>` 重载生效，无需提交 GitHub。
 - **本体(core)变更与模块变更独立**：如果只改了 `modules/battlepass/` 下的文件，CI 只会构建并上传 battlepass 模块的 `.axb`，不会重建本体。
 - **密钥一致性**：模块加密使用与本体相同的 canonical root_seed（通过 `AXS_SEED_PARTS_B64` Secret），已部署的本体才能解密新模块。如果 Secret 未配置或变更过，新模块将无法被解密加载。
 - **CI 构建失败时检查**：密钥扫描（硬编码 QQ/密码/JWT）、编译错误、ProGuard 混淆规则冲突都可能导致失败，在 Actions 日志中定位具体原因。
@@ -847,14 +824,16 @@ Content-Type: application/json
 
 1. **停止服务端时不要用 `Stop-Process -Name java`**：这会杀死所有 Java 进程（包括客户端）。应使用 `stop` 命令或按 PID 精确停止。
 
-2. **UI ID 命名空间**：模块注册的 UI ID 格式为 `模块名:ui_id`（如 `AXS:lottery_case`），关闭时需用完整 ID。打开时可用简短 ID。
+2. **UI ID 命名空间**：模块注册的 UI ID 格式为 `模块名:ui_id`（如 `AXS:lottery_case`），`ax_is_ui_open` 等查询需用注册时的完整 ID。调试桥不提供任何 UI 写接口，`ui.reload`/`ui.open`/`ui.close`/`ui.send_packet` 已移除——它们曾导致 AI 用不带 `AXS:` 前缀的 ID 注册出假 UI、绕过模块初始化裸开 UI、向 packetHandler 注入假包，干扰真实功能。UI 的打开/关闭/重载一律走真实路径：Herald 模拟玩家操作 + `axs reload <module>`。
 
 3. **`layer_render` 事件量大**：每帧触发，仅在需要时监听。常规调试用 `screen_open`/`screen_close`/`layer_open`/`layer_close`。
 
-4. **`ax_capture_packets` vs `packetBridge.sendPacket`**：Herald 的 `ax_capture_packets` 监听的是 ArcartX 客户端的 `CustomPacketEvent`，而服务端模块通过 `packetBridge.sendPacket` 发送的 UI 通讯包走不同通道，不会被捕获。要测试 packetHandler，用调试桥的 `ui.send_packet` RPC 方法。
+4. **`ax_capture_packets` vs `packetBridge.sendPacket`**：Herald 的 `ax_capture_packets` 监听的是 ArcartX 客户端的 `CustomPacketEvent`，而服务端模块通过 `packetBridge.sendPacket` 发送的 UI 通讯包走不同通道，不会被捕获。要测试 packetHandler，只能通过 Herald 模拟真实客户端交互（点击/按键）触发——调试桥的 `ui.send_packet` 已移除。
 
-5. **debug 模块不参与生产构建**：已从 `buildAll`/`buildModules`/`encryptAllModuleAxb`/`buildDev` 排除，仅通过 `:modules:debug:jar` 单独编译。
+5. **不要在服务端 eval ARIA 脚本**：`aria.eval`/`aria.available` 已移除（`ax_eval_aria`/`ax_check_aria_available` 同步删除）。脱离真实 UI 上下文执行脚本得到的返回值不可靠，ARIA 逻辑只用 `ax_analyze_aria_script` 静态分析，再用真实 UI 流程验证。
 
-6. **Herald 端口动态分配**：范围 8888-8898，从 `<gameDir>/.herald/client-port` 读取。
+6. **debug 模块不参与生产构建**：已从 `buildAll`/`buildModules`/`encryptAllModuleAxb`/`buildDev` 排除，仅通过 `:modules:debug:jar` 单独编译。
 
-7. **workspace.path 必须指向服务端根目录**：MCP Server 会自动检测 `plugins/ArcartX-Suite/ui/` 或 `plugins/ArcartXSuite/ui/`。
+7. **Herald 端口动态分配**：范围 8888-8898，从 `<gameDir>/.herald/client-port` 读取。
+
+8. **workspace.path 必须指向服务端根目录**：MCP Server 会自动检测 `plugins/ArcartX-Suite/ui/` 或 `plugins/ArcartXSuite/ui/`。

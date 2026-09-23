@@ -86,33 +86,36 @@ SSE 模式下：
 |--------|------|-------------------|
 | `ax_connect_bridge` | 连接服务端调试桥 | — |
 | `ax_get_ui_config` | 获取服务端 UI 配置 | `ui.read` |
-| `ax_reload_ui` | 热重载 UI | `ui.reload` |
-| `ax_open_ui` | 打开 UI | `ui.open` |
-| `ax_close_ui` | 关闭 UI | `ui.close` |
-| `ax_send_ui_packet` | 向 UI 发包 | `ui.send_packet` |
-| `ax_eval_aria` | 执行 ARIA 脚本 | `aria.eval` |
+| `ax_list_ui_files_online` | 列出服务端 ui/ 目录文件 | `ui.list` |
+| `ax_is_ui_open` | 查询玩家某 UI 是否打开 | `ui.is_open` |
 | `ax_reload_module` | 重载模块 | `module.reload` |
 | `ax_list_modules` | 列出已加载模块 | `module.list` |
+| `ax_diagnose_config` | 模块配置规约诊断 | `config.diagnose` |
+| `ax_list_players` | 列出在线玩家 | `player.list` |
 | `ax_run_server_command` | 执行服务端命令 | `server.command` |
+| `ax_tail_log` | 读取服务端最近日志 | `log.tail` |
+| `ax_get_captured_packets` | 查询捕获的客户端包 | `packet.get_captured` |
+| `ax_clear_captured_packets` | 清空包流捕获缓冲 | `packet.clear` |
+| `ax_packet_capture_status` | 查询捕获缓冲状态 | `packet.status` |
 
 ## WebSocket 协议（连调试桥）
 
 请求格式：
 ```json
-{"id":"req_001","method":"ui.reload","params":{"uiId":"market_shop"}}
+{"id":"req_001","method":"ui.is_open","params":{"player":"Steve","uiId":"AXS:market_shop"}}
 ```
 
 响应格式：
 ```json
-{"id":"req_001","result":{"success":true}}
+{"id":"req_001","result":{"open":true}}
 ```
 
 调试桥支持的 method（见 axs-debug 模块）：
-- `ui.list`, `ui.read`, `ui.reload`, `ui.open`, `ui.close`, `ui.is_open`, `ui.send_packet`
-- `aria.eval`, `aria.available`
+- `ui.list`, `ui.read`, `ui.is_open`（只读查询）
 - `module.list`, `module.reload`
+- `config.diagnose`
 - `player.list`, `server.command`, `log.tail`
-- `packet.capture`, `packet.get_captured`
+- `packet.get_captured`, `packet.capture`（别名）, `packet.clear`, `packet.status`
 
 ## 项目结构
 
